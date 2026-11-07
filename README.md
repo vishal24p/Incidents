@@ -2,8 +2,6 @@
 
 Incidents is a LangGraph CLI for triaging sample production alerts. A router selects logs, deploys, and metrics specialists to investigate in parallel. An analyst combines their findings into a diagnosis and proposes remediation. Policy gates high-risk actions for team approval before publishing a Markdown runbook.
 
-Built from the NextWork project **Build a Multi-Agent Incident Triage System with LangGraph**.
-
 ## Setup
 
 Install [uv](https://docs.astral.sh/uv/) and [Ollama](https://ollama.com/). Start Ollama and run `ollama signin` to use the default cloud model.
