@@ -57,3 +57,82 @@ def metric_window(service: str) -> str:
         f"{name}: " + ", ".join(f"{p['ts'][11:16]}={p['value']}" for p in points)
         for name, points in series.items()
     )
+
+
+SPECIALISTS = {
+    "logs": {
+        "tools": [search_logs],
+        "prompt": "You are the logs investigator on an incident response team. "
+        "Search the logs of the alerting service and its dependencies for "
+        "errors that explain the alert, and note when they started.",
+    },
+    "deploys": {
+        "tools": [recent_deploys],
+        "prompt": "You are the change investigator on an incident response team. "
+        "Find deploys to the alerting service or its dependencies shortly "
+        "before the alert, and judge which change could cause it.",
+    },
+    "metrics": {
+        "tools": [metric_window],
+        "prompt": "You are the metrics investigator on an incident response team. "
+        "Read the metrics of the alerting service and its dependencies and "
+        "describe what changed, when, and by how much.",
+    },
+}
+
+FINDING_SCHEMA = {
+    "title": "Finding",
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "suspected_cause": {"type": "string"},
+        "severity": {"type": "string", "enum": ["SEV1", "SEV2", "SEV3", "SEV4"]},
+    },
+    "required": ["summary", "evidence", "suspected_cause", "severity"],
+}
+
+def build_specialist(name: str):
+    spec = SPECIALISTS[name]
+    return create_agent(
+        build_model(),
+        tools=spec["tools"],
+        system_prompt=spec["prompt"]
+        + " Use your tools before answering. Quote exact evidence. "
+        "Rate severity from SEV1 (worst) to SEV4 from what you found.",
+        response_format=FINDING_SCHEMA,
+        name=f"{name}_specialist",
+    )
+
+
+def run_specialist(name: str, brief: str) -> dict:
+    result = build_specialist(name).invoke(
+        {"messages": [("human", brief)]},
+        config={"recursion_limit": 25},
+    )
+    return result["structured_response"]
+
+
+def alert_brief(alert_id: str) -> str:
+    alert = {a["id"]: a for a in load_json("alerts.json")}[alert_id]
+    service = alert["service"]
+    related = [service] + load_json("services.json")[service]["depends_on"]
+    return (
+        f"Alert {alert['id']} fired at {alert['fired_at']} on {service}.\n"
+        f"{alert['title']}: {alert['description']}\n"
+        f"Services to check: {', '.join(related)}."
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run one specialist on one alert.")
+    parser.add_argument("specialist", choices=list(SPECIALISTS))
+    parser.add_argument("alert")
+    args = parser.parse_args()
+    print(f"{args.specialist} specialist investigating {args.alert}...")
+    finding = run_specialist(args.specialist, alert_brief(args.alert))
+    print(json.dumps(finding, indent=2))
+
+
+if __name__ == "__main__":
+    main()
